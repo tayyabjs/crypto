@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Container, Box, Typography, TextField, Button, Grid,
+  Container, Box, Typography, TextField, Button, Grid, useMediaQuery,
   CircularProgress, IconButton, Chip, Snackbar, Alert, InputAdornment,
   TableContainer, Table, TableHead, TableBody, TableRow, TableCell, Paper, Tooltip,
-  Card, CardContent, LinearProgress, Divider
+  Drawer, List, ListItem, ListItemText, Divider, Dialog, DialogTitle, DialogContent, DialogActions,
+  Pagination, Skeleton, Stack
 } from '@mui/material';
-import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import SearchIcon from '@mui/icons-material/Search';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -16,9 +17,12 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import SignalCellularAltIcon from '@mui/icons-material/SignalCellularAlt';
+import MenuIcon from '@mui/icons-material/Menu';
+import StarIcon from '@mui/icons-material/Star';
 import TrendingFlatIcon from '@mui/icons-material/TrendingFlat';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import SignalCellularAltIcon from '@mui/icons-material/SignalCellularAlt';
+import LinearProgress from '@mui/material/LinearProgress';
 
 // Custom Material-UI Theme for a dark, professional look
 const darkTheme = createTheme({
@@ -54,26 +58,26 @@ const darkTheme = createTheme({
   typography: {
     fontFamily: 'Inter, sans-serif',
     h1: {
-      fontSize: '2.5rem',
+      fontSize: '2rem', // Smaller for mobile
       fontWeight: 700,
       background: 'linear-gradient(45deg, #90caf9 30%, #f48fb1 90%)',
       WebkitBackgroundClip: 'text',
       WebkitTextFillColor: 'transparent',
     },
     h5: {
-      fontSize: '1.25rem',
+      fontSize: '1rem', // Smaller for mobile
       fontWeight: 400,
     },
     h6: {
-      fontSize: '1.1rem',
+      fontSize: '1rem', // Smaller for mobile
       fontWeight: 600,
     },
     subtitle1: {
-      fontSize: '1rem',
+      fontSize: '0.9rem', // Smaller for mobile
       fontWeight: 500,
     },
     body2: {
-      fontSize: '0.8rem', // Slightly smaller for dense table
+      fontSize: '0.75rem', // Slightly smaller for dense table/mobile
     },
   },
   components: {
@@ -83,6 +87,12 @@ const darkTheme = createTheme({
           borderRadius: 8,
           textTransform: 'none',
           fontWeight: 600,
+          // Responsive padding
+          padding: '6px 12px',
+          '@media (max-width: 600px)': {
+            padding: '4px 8px',
+            fontSize: '0.75rem',
+          },
         },
       },
     },
@@ -100,6 +110,8 @@ const darkTheme = createTheme({
         root: {
           borderRadius: 6,
           fontWeight: 600,
+          height: 24, // Smaller height
+          fontSize: '0.7rem', // Smaller font
         },
       },
     },
@@ -110,6 +122,11 @@ const darkTheme = createTheme({
           boxShadow: '0px 8px 20px rgba(0, 0, 0, 0.2)',
           border: '1px solid',
           borderColor: 'primary.dark',
+          // For mobile responsiveness
+          overflowX: 'auto',
+          '@media (max-width: 600px)': {
+            fontSize: '0.7rem',
+          },
         },
       },
     },
@@ -124,16 +141,40 @@ const darkTheme = createTheme({
       styleOverrides: {
         root: {
           borderColor: '#4a5568', // Border color for table cells
-          padding: '8px 12px', // Adjust padding for better spacing in dense table
+          padding: '6px 8px', // Reduced padding for mobile
+          fontSize: '0.75rem', // Smaller font for body
+          '@media (max-width: 600px)': {
+            padding: '4px 6px',
+            fontSize: '0.7rem',
+          },
         },
         head: {
           color: 'text.primary',
           fontWeight: 'bold',
-          fontSize: '0.85rem', // Slightly smaller font for headers
+          fontSize: '0.75rem', // Smaller font for headers
+          '@media (max-width: 600px)': {
+            fontSize: '0.65rem',
+          },
         },
         body: {
           color: 'text.primary',
-          fontSize: '0.8rem', // Slightly smaller font for body
+          fontSize: '0.75rem', // Slightly smaller font for body
+          '@media (max-width: 600px)': {
+            fontSize: '0.7rem',
+          },
+        },
+      },
+    },
+    MuiPagination: {
+      styleOverrides: {
+        root: {
+          '& .MuiPaginationItem-root': {
+            '@media (max-width: 600px)': {
+              minWidth: 30, // Smaller pagination items
+              height: 30,
+              fontSize: '0.7rem',
+            },
+          },
         },
       },
     },
@@ -153,6 +194,16 @@ const CryptoInvestmentAnalyzer = () => {
   const [snackbarSeverity, setSnackbarSeverity] = useState('info');
   const [marketSentiment, setMarketSentiment] = useState(null);
   const [historicalData, setHistoricalData] = useState({});
+  const [topCryptos, setTopCryptos] = useState([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [topCryptosDialogOpen, setTopCryptosDialogOpen] = useState(false);
+  const [topCryptosLoading, setTopCryptosLoading] = useState(false);
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 10; // Show 10 items per page
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Helper function to show snackbar messages
   const showSnackbar = (message, severity) => {
@@ -185,16 +236,42 @@ const CryptoInvestmentAnalyzer = () => {
       const response = await fetch(
         `https://api.coingecko.com/api/v3/coins/${cryptoId}/market_chart?vs_currency=usd&days=180&interval=daily`
       );
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
       return data;
     } catch (error) {
       console.error(`Error fetching historical data for ${cryptoId}:`, error);
       return null;
+    }
+  };
+
+  // Fetch top cryptocurrencies from CoinGecko
+  const fetchTopCryptos = async () => {
+    setTopCryptosLoading(true);
+    try {
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=20&page=1&sparkline=false`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setTopCryptos(data.map(crypto => ({
+        id: crypto.id,
+        name: crypto.name,
+        symbol: crypto.symbol
+      })));
+    } catch (error) {
+      console.error('Error fetching top cryptos:', error);
+      showSnackbar(`Failed to fetch top cryptos: ${error.message}`, 'error');
+    } finally {
+      setTopCryptosLoading(false);
     }
   };
 
@@ -206,38 +283,38 @@ const CryptoInvestmentAnalyzer = () => {
       showSnackbar('No cryptocurrencies selected to analyze.', 'info');
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       // Fetch market sentiment
       await fetchMarketSentiment();
-      
+
       const response = await fetch(
         `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${selectedCryptos.join(',')}&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h,7d`
       );
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
+
       // Identify cryptos that were requested but not returned by CoinGecko (invalid IDs)
       const returnedIds = new Set(data.map(c => c.id));
       const notFoundIds = selectedCryptos.filter(id => !returnedIds.has(id));
-      
+
       if (notFoundIds.length > 0) {
         showSnackbar(`Could not find data for: ${notFoundIds.join(', ')}. Please check the crypto IDs.`, 'warning');
         // Filter out the non-existent IDs from selectedCryptos for future fetches
         setSelectedCryptos(prev => prev.filter(id => returnedIds.has(id)));
       }
-      
+
       // Fetch historical data for each crypto
-      const historicalDataPromises = data.map(crypto => 
+      const historicalDataPromises = data.map(crypto =>
         fetchHistoricalData(crypto.id).then(history => ({ id: crypto.id, history }))
       );
-      
+
       const historicalResults = await Promise.all(historicalDataPromises);
       const newHistoricalData = {};
       historicalResults.forEach(result => {
@@ -246,23 +323,23 @@ const CryptoInvestmentAnalyzer = () => {
         }
       });
       setHistoricalData(newHistoricalData);
-      
+
       // Process data with our assessment logic
       const processedData = data.map(crypto => {
         const marketCap = crypto.market_cap;
         const fdv = crypto.fully_diluted_valuation;
         const volume = crypto.total_volume;
-        
+
         // Calculate ratios
         const fdvRatio = fdv && marketCap ? fdv / marketCap : null;
         const volumeToMarketCapRatio = volume && marketCap ? volume / marketCap : null;
-        
+
         // Assessment logic
         let assessment = 'GO AHEAD';
         let riskScore = 2;
         let className = 'go'; // Used for color coding
         let reasons = [];
-        
+
         // FDV Ratio Check (Fully Diluted Valuation / Market Cap)
         // High FDV ratio implies significant future token unlocks, potentially diluting price.
         if (fdvRatio && fdvRatio > 2) {
@@ -281,7 +358,7 @@ const CryptoInvestmentAnalyzer = () => {
           className = 'caution';
           reasons.push('Moderate FDV ratio - research vesting schedules');
         }
-        
+
         // Volume/MarketCap Ratio Check
         // Low volume relative to market cap indicates poor liquidity, making large trades difficult.
         if (volumeToMarketCapRatio && volumeToMarketCapRatio < 0.005) {
@@ -297,45 +374,45 @@ const CryptoInvestmentAnalyzer = () => {
           }
           reasons.push('Low liquidity - be careful with large orders');
         }
-        
+
         // Price volatility check (24h price change)
         if (Math.abs(crypto.price_change_percentage_24h) > 20) {
           riskScore = Math.max(riskScore, 6);
           reasons.push('High volatility detected in 24h price change');
         }
-        
+
         // Calculate 6-month outlook
         const history = newHistoricalData[crypto.id];
         let sixMonthOutlook = 'Neutral';
         let sixMonthTrend = 0;
         let supportLevel = null;
         let resistanceLevel = null;
-        
+
         if (history && history.prices && history.prices.length > 30) {
           const prices = history.prices.map(p => p[1]); // [timestamp, price]
           const firstPrice = prices[0];
           const lastPrice = prices[prices.length - 1];
           sixMonthTrend = ((lastPrice - firstPrice) / firstPrice) * 100;
-          
+
           // Simple support/resistance based on min/max in last 30 days
           const recentPrices = prices.slice(-30);
           supportLevel = Math.min(...recentPrices);
           resistanceLevel = Math.max(...recentPrices);
-          
+
           if (sixMonthTrend > 15) sixMonthOutlook = 'Bullish';
           else if (sixMonthTrend < -15) sixMonthOutlook = 'Bearish';
           else sixMonthOutlook = 'Neutral';
         }
-        
+
         // Day trading signal (simplified)
         let dayTradeSignal = 'HOLD';
         let signalStrength = 0;
         let signalReason = '';
-        
+
         const priceChange24h = crypto.price_change_percentage_24h;
         const priceChange7d = crypto.price_change_percentage_7d;
         const rsi = 50 + (priceChange24h / 2); // Simplified RSI approximation
-        
+
         if (rsi < 30 && priceChange24h > 2) {
           dayTradeSignal = 'BUY';
           signalStrength = 80;
@@ -357,7 +434,7 @@ const CryptoInvestmentAnalyzer = () => {
           signalStrength = 30;
           signalReason = 'No clear signal';
         }
-        
+
         // Adjust position size based on day trade signal and market conditions
         let adjustedRiskScore = riskScore;
         if (dayTradeSignal === 'BUY' && sixMonthOutlook === 'Bullish') {
@@ -365,7 +442,7 @@ const CryptoInvestmentAnalyzer = () => {
         } else if (dayTradeSignal === 'SELL' && sixMonthOutlook === 'Bearish') {
           adjustedRiskScore = Math.min(10, riskScore + 1);
         }
-        
+
         return {
           ...crypto,
           fdvRatio,
@@ -384,9 +461,10 @@ const CryptoInvestmentAnalyzer = () => {
           resistanceLevel
         };
       });
-      
+
       setCryptos(processedData);
       setLastUpdated(new Date());
+      setPage(1); // Reset to first page on new data
       if (notFoundIds.length === 0) { // Only show success if all requested cryptos were found
         showSnackbar('Crypto data refreshed successfully!', 'success');
       }
@@ -410,13 +488,13 @@ const CryptoInvestmentAnalyzer = () => {
   const getAssessmentIcon = (className) => {
     switch (className) {
       case 'go':
-        return <CheckCircleOutlineIcon color="success" sx={{ fontSize: 20 }} />;
+        return <CheckCircleOutlineIcon color="success" sx={{ fontSize: 16 }} />;
       case 'caution':
-        return <WarningAmberIcon color="warning" sx={{ fontSize: 20 }} />;
+        return <WarningAmberIcon color="warning" sx={{ fontSize: 16 }} />;
       case 'no-go':
-        return <CancelOutlinedIcon color="error" sx={{ fontSize: 20 }} />;
+        return <CancelOutlinedIcon color="error" sx={{ fontSize: 16 }} />;
       default:
-        return <WarningAmberIcon color="info" sx={{ fontSize: 20 }} />;
+        return <WarningAmberIcon color="info" sx={{ fontSize: 16 }} />;
     }
   };
 
@@ -424,11 +502,11 @@ const CryptoInvestmentAnalyzer = () => {
   const getSignalIcon = (signal) => {
     switch (signal) {
       case 'BUY':
-        return <TrendingUpIcon color="success" sx={{ fontSize: 20 }} />;
+        return <TrendingUpIcon color="success" sx={{ fontSize: 16 }} />;
       case 'SELL':
-        return <TrendingDownIcon color="error" sx={{ fontSize: 20 }} />;
+        return <TrendingDownIcon color="error" sx={{ fontSize: 16 }} />;
       default:
-        return <TrendingFlatIcon color="info" sx={{ fontSize: 20 }} />;
+        return <TrendingFlatIcon color="info" sx={{ fontSize: 16 }} />;
     }
   };
 
@@ -479,15 +557,31 @@ const CryptoInvestmentAnalyzer = () => {
     showSnackbar(`Removed ${cryptoId} from analysis.`, 'info');
   };
 
+  // Add a top crypto to the watchlist
+  const addTopCrypto = (cryptoId) => {
+    if (!selectedCryptos.includes(cryptoId)) {
+      setSelectedCryptos([...selectedCryptos, cryptoId]);
+      setTopCryptosDialogOpen(false);
+      showSnackbar(`Added ${cryptoId} to your watchlist.`, 'success');
+    } else {
+      showSnackbar(`${cryptoId} is already in your list.`, 'warning');
+    }
+  };
+
   // Effect hook to fetch data whenever selected cryptos change
   useEffect(() => {
     fetchCryptoData();
   }, [selectedCryptos]);
 
+  // Effect to fetch top cryptos on mount
+  useEffect(() => {
+    fetchTopCryptos();
+  }, []);
+
   // Get market sentiment message
   const getMarketSentimentMessage = () => {
     if (!marketSentiment) return 'Loading market sentiment...';
-    
+
     const { fearGreedIndex } = marketSentiment;
     if (fearGreedIndex < 25) return 'Extreme Fear';
     if (fearGreedIndex < 45) return 'Fear';
@@ -499,7 +593,7 @@ const CryptoInvestmentAnalyzer = () => {
   // Get market sentiment color
   const getMarketSentimentColor = () => {
     if (!marketSentiment) return 'info';
-    
+
     const { fearGreedIndex } = marketSentiment;
     if (fearGreedIndex < 25) return 'error';
     if (fearGreedIndex < 45) return 'warning';
@@ -508,418 +602,403 @@ const CryptoInvestmentAnalyzer = () => {
     return 'success';
   };
 
+  // Handle pagination change
+  const handlePageChange = (event, value) => {
+    setPage(value);
+  };
+
+  // Calculate pagination data
+  const paginatedCryptos = cryptos.slice(
+    (page - 1) * itemsPerPage,
+    page * itemsPerPage
+  );
+  const totalPages = Math.ceil(cryptos.length / itemsPerPage);
+
   return (
     <ThemeProvider theme={darkTheme}>
-      <CssBaseline /> {/* Provides a consistent baseline for styling */}
+      <CssBaseline />
       <Box
         sx={{
           minHeight: '100vh',
           background: 'linear-gradient(135deg, #1a202c 0%, #2b3a50 50%, #1a202c 100%)',
           color: 'text.primary',
-          py: 8,
+          py: 2, // Reduced padding for mobile
         }}
       >
-        <Container maxWidth="lg">
+        <Container maxWidth="lg" sx={{ px: { xs: 1, sm: 2 } }}> {/* Responsive padding */}
           {/* Header Section */}
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Typography variant="h1" component="h1" gutterBottom>
-              Crypto Investment Guru
-            </Typography>
-            <Typography variant="h5" color="text.secondary">
-              Advanced analysis with day trading signals, market sentiment, and 6-month outlook
+          <Box sx={{ textAlign: 'center', mb: 2 }}> {/* Reduced margin for mobile */}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              {isMobile && (
+                <IconButton
+                  color="inherit"
+                  aria-label="open drawer"
+                  onClick={() => setDrawerOpen(true)}
+                  sx={{ mr: 1 }}
+                >
+                  <MenuIcon />
+                </IconButton>
+              )}
+              <Typography variant="h1" component="h1" sx={{ flexGrow: 1 }}>
+                Crypto Investment Guru
+              </Typography>
+            </Box>
+            <Typography variant="h6" color="text.secondary"> {/* Smaller subtitle */}
+              Advanced analysis with day trading signals
             </Typography>
           </Box>
 
-          {/* Market Sentiment Card */}
+          {/* Market Sentiment Card - Simplified for mobile */}
           {marketSentiment && (
-            <Card sx={{ mb: 4, bgcolor: 'background.paper', borderRadius: 3 }}>
-              <CardContent>
-                <Box display="flex" alignItems="center" justifyContent="space-between">
-                  <Box>
-                    <Typography variant="h6" component="div" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <SignalCellularAltIcon /> Market Sentiment
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                      Overall market conditions for crypto trading
-                    </Typography>
-                  </Box>
-                  <Chip
-                    label={getMarketSentimentMessage()}
-                    color={getMarketSentimentColor()}
-                    variant="outlined"
-                    size="medium"
-                    sx={{ fontWeight: 'bold', fontSize: '1.1rem', height: '40px' }}
-                  />
-                </Box>
-                
-                <Grid container spacing={2} sx={{ mt: 2 }}>
-                  <Grid item xs={6} md={3}>
-                    <Typography variant="body2" color="text.secondary">Fear & Greed Index</Typography>
-                    <Typography variant="h6">{marketSentiment.fearGreedIndex}/100</Typography>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={marketSentiment.fearGreedIndex} 
-                      color={getMarketSentimentColor()}
-                      sx={{ mt: 1, height: 8, borderRadius: 4 }}
-                    />
-                  </Grid>
-                  <Grid item xs={6} md={3}>
-                    <Typography variant="body2" color="text.secondary">BTC Dominance</Typography>
-                    <Typography variant="h6">{marketSentiment.btcDominance.toFixed(1)}%</Typography>
-                  </Grid>
-                  <Grid item xs={6} md={3}>
-                    <Typography variant="body2" color="text.secondary">24h Market Cap Change</Typography>
-                    <Typography 
-                      variant="h6" 
-                      color={marketSentiment.marketCapChange24h >= 0 ? 'success.main' : 'error.main'}
-                    >
-                      {marketSentiment.marketCapChange24h >= 0 ? '+' : ''}{marketSentiment.marketCapChange24h.toFixed(2)}%
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6} md={3}>
-                    <Typography variant="body2" color="text.secondary">24h Volume Change</Typography>
-                    <Typography 
-                      variant="h6" 
-                      color={marketSentiment.volumeChange24h >= 0 ? 'success.main' : 'error.main'}
-                    >
-                      {marketSentiment.volumeChange24h >= 0 ? '+' : ''}{marketSentiment.volumeChange24h.toFixed(2)}%
-                    </Typography>
-                  </Grid>
-                </Grid>
-                
-                <Box sx={{ mt: 2, p: 2, bgcolor: 'background.default', borderRadius: 2 }}>
-                  <Typography variant="body2">
-                    <strong>Investment Outlook:</strong> {
-                      marketSentiment.fearGreedIndex < 30 
-                        ? "Market fear is high - potential buying opportunity for long-term investors" 
-                        : marketSentiment.fearGreedIndex > 70 
-                          ? "Market greed is high - consider taking profits or being cautious" 
-                          : "Market is neutral - proceed with standard risk management"
-                    }
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'background.paper', borderRadius: 2 }}>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <SignalCellularAltIcon fontSize="small" />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                    Market Sentiment
                   </Typography>
                 </Box>
-              </CardContent>
-            </Card>
+                <Chip
+                  label={getMarketSentimentMessage()}
+                  color={getMarketSentimentColor()}
+                  size="small"
+                  sx={{ fontWeight: 'bold' }}
+                />
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-around', mt: 1 }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">Fear & Greed</Typography>
+                  <Typography variant="body2">{marketSentiment.fearGreedIndex}/100</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">BTC Dominance</Typography>
+                  <Typography variant="body2">{marketSentiment.btcDominance.toFixed(1)}%</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">24h Change</Typography>
+                  <Typography
+                    variant="body2"
+                    color={marketSentiment.marketCapChange24h >= 0 ? 'success.main' : 'error.main'}
+                  >
+                    {marketSentiment.marketCapChange24h >= 0 ? '+' : ''}{marketSentiment.marketCapChange24h.toFixed(1)}%
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
           )}
 
-          {/* Controls Section */}
+          {/* Controls Section - Responsive */}
           <Box
             sx={{
               bgcolor: 'background.paper',
-              borderRadius: 3,
-              p: 4,
-              mb: 4,
+              borderRadius: 2, // Smaller radius
+              p: 2, // Reduced padding
+              mb: 2, // Reduced margin
               border: '1px solid',
               borderColor: 'primary.dark',
-              boxShadow: '0px 8px 20px rgba(0, 0, 0, 0.2)',
+              boxShadow: '0px 4px 10px rgba(0, 0, 0, 0.2)', // Smaller shadow
             }}
           >
-            <Grid container spacing={3} alignItems="center">
-              <Grid item xs={12} md={8}>
+            <Grid container spacing={1} alignItems="center"> {/* Reduced spacing */}
+              <Grid item xs={12} sm={7}>
                 <TextField
                   fullWidth
-                  label="Enter Crypto ID (e.g., bitcoin, ethereum). Check CoinGecko for exact IDs."
+                  label="Enter Crypto ID..."
                   variant="outlined"
+                  size="small" // Smaller input
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && addCrypto()}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
-                        <SearchIcon color="action" />
+                        <SearchIcon color="action" sx={{ fontSize: 18 }} />
                       </InputAdornment>
                     ),
                   }}
                 />
               </Grid>
-              <Grid item xs={12} md={2}>
+              <Grid item xs={6} sm={2.5}>
                 <Button
                   fullWidth
                   variant="contained"
                   color="primary"
                   onClick={addCrypto}
-                  sx={{ height: '56px' }} // Match TextField height
+                  size="small" // Smaller button
                 >
                   Add Crypto
                 </Button>
               </Grid>
-              <Grid item xs={12} md={2}>
+              <Grid item xs={6} sm={2.5}>
                 <Button
                   fullWidth
                   variant="outlined"
                   color="secondary"
+                  onClick={() => setTopCryptosDialogOpen(true)}
+                  size="small" // Smaller button
+                  startIcon={<StarIcon sx={{ fontSize: 16 }} />} // Smaller icon
+                >
+                  Top Crypto
+                </Button>
+              </Grid>
+              <Grid item xs={12}>
+                <Button
+                  fullWidth
+                  variant="outlined"
                   onClick={fetchCryptoData}
                   disabled={loading}
-                  startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
-                  sx={{ height: '56px' }}
+                  startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon sx={{ fontSize: 16 }} />}
+                  size="small"
+                  sx={{ mt: 1 }} // Margin top for mobile stacking
                 >
                   {loading ? 'Refreshing...' : 'Refresh Data'}
                 </Button>
               </Grid>
             </Grid>
             {lastUpdated && (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2, textAlign: 'right' }}>
-                Last updated: {lastUpdated.toLocaleString()}
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1, textAlign: 'right', fontSize: '0.7rem' }}>
+                Last updated: {lastUpdated.toLocaleTimeString()}
               </Typography>
             )}
           </Box>
 
-          {/* Crypto Data Table */}
+          {/* Selected Cryptos Chips - Horizontal scroll for mobile */}
+          {selectedCryptos.length > 0 && (
+            <Box sx={{ mb: 2, display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 1, pb: 1 }}>
+              {selectedCryptos.map((id) => (
+                <Chip
+                  key={id}
+                  label={id}
+                  onDelete={() => removeCrypto(id)}
+                  size="small"
+                  sx={{ flexShrink: 0 }}
+                />
+              ))}
+            </Box>
+          )}
+
+          {/* Crypto Data Table - Responsive with pagination */}
           {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
               <CircularProgress />
             </Box>
           ) : cryptos.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 6 }}>
+            <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography variant="h6" color="text.secondary">
                 No cryptocurrencies to analyze. Add some above!
               </Typography>
             </Box>
           ) : (
-            <TableContainer component={Paper} sx={{ bgcolor: 'background.paper' }}>
-              <Table sx={{ minWidth: 1400 }} aria-label="crypto analysis table" size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Crypto</TableCell>
-                    <TableCell align="right">Price</TableCell>
-                    <TableCell align="center">24H Change</TableCell>
-                    <TableCell align="center">7D Change</TableCell>
-                    <TableCell align="center">Day Trade Signal</TableCell>
-                    <TableCell align="center">Signal Strength</TableCell>
-                    <TableCell align="right">Market Cap</TableCell>
-                    <TableCell align="right">FDV</TableCell>
-                    <TableCell align="center">FDV Ratio</TableCell>
-                    <TableCell align="center">Vol/MC Ratio</TableCell>
-                    <TableCell align="center">6M Outlook</TableCell>
-                    <TableCell align="center">6M Trend</TableCell>
-                    <TableCell align="center">Risk Score</TableCell>
-                    <TableCell align="center">Position Size</TableCell>
-                    <TableCell>Assessment & Remarks</TableCell>
-                    <TableCell align="center">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {cryptos.map((crypto) => (
-                    <TableRow
-                      key={crypto.id}
-                      sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
-                    >
-                      <TableCell component="th" scope="row">
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <img src={crypto.image} alt={crypto.name} style={{ width: 24, height: 24, borderRadius: '50%' }} />
-                          <Box>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>{crypto.name}</Typography>
-                            <Typography variant="body2" color="text.secondary" sx={{ textTransform: 'uppercase' }}>{crypto.symbol}</Typography>
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(crypto.current_price)}</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          icon={crypto.price_change_percentage_24h >= 0 ? <TrendingUpIcon sx={{ fontSize: 16 }} /> : <TrendingDownIcon sx={{ fontSize: 16 }} />}
-                          label={formatPercentage(crypto.price_change_percentage_24h)}
-                          color={crypto.price_change_percentage_24h >= 0 ? 'success' : 'error'}
-                          size="small"
-                          sx={{ fontWeight: 'bold' }}
-                        />
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          icon={crypto.price_change_percentage_7d >= 0 ? <TrendingUpIcon sx={{ fontSize: 16 }} /> : <TrendingDownIcon sx={{ fontSize: 16 }} />}
-                          label={formatPercentage(crypto.price_change_percentage_7d)}
-                          color={crypto.price_change_percentage_7d >= 0 ? 'success' : 'error'}
-                          size="small"
-                          sx={{ fontWeight: 'bold' }}
-                        />
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          icon={getSignalIcon(crypto.dayTradeSignal)}
-                          label={crypto.dayTradeSignal}
-                          color={
-                            crypto.dayTradeSignal === 'BUY' ? 'success' : 
-                            crypto.dayTradeSignal === 'SELL' ? 'error' : 'info'
-                          }
-                          size="small"
-                          sx={{ fontWeight: 'bold' }}
-                        />
-                      </TableCell>
-                      <TableCell align="center">
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <LinearProgress 
-                            variant="determinate" 
-                            value={crypto.signalStrength} 
-                            color={
-                              crypto.signalStrength > 70 ? 'success' : 
-                              crypto.signalStrength > 50 ? 'warning' : 'error'
-                            }
-                            sx={{ width: '60px', height: 6, borderRadius: 3 }}
-                          />
-                          <Typography variant="body2" sx={{ width: '40px' }}>
-                            {crypto.signalStrength}%
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography variant="body2">{formatLargeNumber(crypto.market_cap)}</Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography variant="body2">{formatLargeNumber(crypto.fully_diluted_valuation)}</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography variant="body2">{crypto.fdvRatio ? crypto.fdvRatio.toFixed(2) : 'N/A'}</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography variant="body2">{crypto.volumeToMarketCapRatio ? formatPercentage(crypto.volumeToMarketCapRatio * 100) : 'N/A'}</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          label={crypto.sixMonthOutlook}
-                          color={
-                            crypto.sixMonthOutlook === 'Bullish' ? 'success' : 
-                            crypto.sixMonthOutlook === 'Bearish' ? 'error' : 'info'
-                          }
-                          size="small"
-                          sx={{ fontWeight: 'bold' }}
-                        />
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography 
-                          variant="body2" 
-                          color={
-                            crypto.sixMonthTrend > 0 ? 'success.main' : 
-                            crypto.sixMonthTrend < 0 ? 'error.main' : 'text.primary'
-                          }
-                        >
-                          {crypto.sixMonthTrend >= 0 ? '+' : ''}{crypto.sixMonthTrend}%
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{crypto.riskScore}/10</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.light' }}>
-                          {crypto.positionSizeRec}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                          {getAssessmentIcon(crypto.className)}
-                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-                            {crypto.assessment}
-                          </Typography>
-                        </Box>
-                        <Typography variant="body2" color="text.secondary">
-                          {crypto.reasons || 'No specific concerns detected based on current criteria.'}
-                        </Typography>
-                        {crypto.signalReason && (
-                          <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic' }}>
-                            <AccessTimeIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.5 }} />
-                            {crypto.signalReason}
-                          </Typography>
-                        )}
-                      </TableCell>
-                      <TableCell align="center">
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<OpenInNewIcon />}
-                            href={`https://www.coingecko.com/en/coins/${crypto.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            CoinGecko
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            size="small"
-                            onClick={() => removeCrypto(crypto.id)}
-                            startIcon={<CloseIcon />}
-                          >
-                            Remove
-                          </Button>
-                        </Box>
-                      </TableCell>
+            <>
+              <TableContainer component={Paper} sx={{ bgcolor: 'background.paper', mb: 1 }}>
+                <Table aria-label="crypto analysis table" size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Crypto</TableCell>
+                      <TableCell align="right">Price</TableCell>
+                      <TableCell align="center">24H</TableCell>
+                      <TableCell align="center">Signal</TableCell>
+                      <TableCell align="center">Risk</TableCell>
+                      <TableCell align="center">Position</TableCell>
+                      <TableCell>Assessment</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                  </TableHead>
+                  <TableBody>
+                    {paginatedCryptos.map((crypto) => (
+                      <TableRow
+                        key={crypto.id}
+                        sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                      >
+                        <TableCell component="th" scope="row">
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <img src={crypto.image} alt={crypto.name} style={{ width: 20, height: 20, borderRadius: '50%' }} />
+                            <Box>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>{crypto.name}</Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ textTransform: 'uppercase', fontSize: '0.65rem' }}>{crypto.symbol}</Typography>
+                            </Box>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{formatCurrency(crypto.current_price)}</Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip
+                            icon={crypto.price_change_percentage_24h >= 0 ? <TrendingUpIcon sx={{ fontSize: 12 }} /> : <TrendingDownIcon sx={{ fontSize: 12 }} />}
+                            label={formatPercentage(crypto.price_change_percentage_24h)}
+                            color={crypto.price_change_percentage_24h >= 0 ? 'success' : 'error'}
+                            size="small"
+                            sx={{ fontWeight: 'bold', height: 20 }}
+                          />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip
+                            icon={getSignalIcon(crypto.dayTradeSignal)}
+                            label={crypto.dayTradeSignal}
+                            color={
+                              crypto.dayTradeSignal === 'BUY' ? 'success' :
+                                crypto.dayTradeSignal === 'SELL' ? 'error' : 'info'
+                            }
+                            size="small"
+                            sx={{ fontWeight: 'bold', height: 20 }}
+                          />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{crypto.riskScore}/10</Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.light' }}>
+                            {crypto.positionSizeRec}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                            {getAssessmentIcon(crypto.className)}
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
+                              {crypto.assessment}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                            {crypto.reasons ? crypto.reasons.substring(0, 30) + (crypto.reasons.length > 30 ? '...' : '') : 'No concerns'}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+                  <Pagination
+                    count={totalPages}
+                    page={page}
+                    onChange={handlePageChange}
+                    color="primary"
+                    size={isMobile ? "small" : "medium"}
+                    siblingCount={isMobile ? 0 : 1} // Show fewer page numbers on mobile
+                    boundaryCount={isMobile ? 1 : 2}
+                  />
+                </Box>
+              )}
+            </>
           )}
 
-          {/* Investment Guidance Section */}
-          <Card sx={{ mt: 4, bgcolor: 'background.paper', borderRadius: 3 }}>
-            <CardContent>
-              <Typography variant="h6" component="div" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                <CheckCircleOutlineIcon color="success" /> Investment Guru Guidance
-              </Typography>
-              
-              <Divider sx={{ my: 2 }} />
-              
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={4}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-                    Day Trading Signals
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Our algorithm analyzes price momentum and volatility to generate buy/sell signals. 
-                    Signal strength indicates confidence level. Always combine with your own technical analysis.
-                  </Typography>
-                </Grid>
-                
-                <Grid item xs={12} md={4}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-                    Market Sentiment
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    The Fear & Greed Index measures market emotions. Extreme fear may indicate buying opportunities, 
-                    while extreme greed could signal overbought conditions. Use as a contrarian indicator.
-                  </Typography>
-                </Grid>
-                
-                <Grid item xs={12} md={4}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 1 }}>
-                    6-Month Outlook
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Long-term trends help contextualize short-term trades. A bullish 6-month outlook 
-                    supports buying dips, while a bearish trend suggests caution even on buy signals.
-                  </Typography>
-                </Grid>
-              </Grid>
-              
-              <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 2 }}>
-                <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
-                  <strong>Disclaimer:</strong> This tool provides algorithmic analysis for informational purposes only. 
-                  Cryptocurrency investments are highly risky and volatile. Always do your own research and never invest 
-                  more than you can afford to lose. Past performance is not indicative of future results.
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-
-          {/* Footer */}
-          <Box sx={{ textAlign: 'center', mt: 6, color: 'text.secondary' }}>
-            <Typography variant="body2">
-              Data provided by CoinGecko API • Investment decisions are your own responsibility
+          {/* Investment Guidance Section - Simplified for mobile */}
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'background.paper', borderRadius: 2 }}>
+            <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, fontWeight: 'bold' }}>
+              <CheckCircleOutlineIcon color="success" fontSize="small" /> Investment Guru Tips
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+              Use day trading signals as a starting point. Combine with market sentiment and long-term trends.
+              Always manage risk with appropriate position sizing.
             </Typography>
           </Box>
-          
+
+          {/* Footer */}
+          <Box sx={{ textAlign: 'center', mt: 2, color: 'text.secondary' }}>
+            <Typography variant="body2" sx={{ fontSize: '0.7rem' }}>
+              Data from CoinGecko API • Investment decisions are your own responsibility
+            </Typography>
+          </Box>
+
           {/* Snackbar for notifications */}
           <Snackbar
             open={snackbarOpen}
-            autoHideDuration={6000}
+            autoHideDuration={4000} // Shorter duration for mobile
             onClose={() => setSnackbarOpen(false)}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} // Centered for mobile
           >
             <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%' }}>
               {snackbarMessage}
             </Alert>
           </Snackbar>
+
+          {/* Mobile Drawer Menu */}
+          {isMobile && (
+            <Drawer
+              anchor="left"
+              open={drawerOpen}
+              onClose={() => setDrawerOpen(false)}
+            >
+              <Box
+                sx={{ width: 250, bgcolor: 'background.default', height: '100%', pt: 2 }}
+                role="presentation"
+              >
+                <List>
+                  <ListItem>
+                    <ListItemText primary="Crypto Investment Guru" primaryTypographyProps={{ fontWeight: 'bold' }} />
+                  </ListItem>
+                  <Divider />
+                  <ListItem button onClick={() => { setDrawerOpen(false); setTopCryptosDialogOpen(true); }}>
+                    <ListItemText primary="Add Top Cryptos" />
+                  </ListItem>
+                  <ListItem button onClick={() => { setDrawerOpen(false); fetchCryptoData(); }}>
+                    <ListItemText primary="Refresh Data" />
+                  </ListItem>
+                </List>
+              </Box>
+            </Drawer>
+          )}
+
+          {/* Top Cryptos Dialog */}
+          <Dialog
+            open={topCryptosDialogOpen}
+            onClose={() => setTopCryptosDialogOpen(false)}
+            fullScreen={isMobile} // Full screen on mobile
+            maxWidth="sm"
+            fullWidth
+          >
+            <DialogTitle>
+              Add Top Cryptocurrencies
+              <IconButton
+                aria-label="close"
+                onClick={() => setTopCryptosDialogOpen(false)}
+                sx={{
+                  position: 'absolute',
+                  right: 8,
+                  top: 8,
+                  color: (theme) => theme.palette.grey[500],
+                }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </DialogTitle>
+            <DialogContent>
+              {topCryptosLoading ? (
+                <Stack spacing={1}>
+                  {[...Array(10)].map((_, index) => (
+                    <Skeleton key={index} variant="rectangular" height={40} />
+                  ))}
+                </Stack>
+              ) : (
+                <List>
+                  {topCryptos.map((crypto) => (
+                    <ListItem
+                      key={crypto.id}
+                      divider
+                      secondaryAction={
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => addTopCrypto(crypto.id)}
+                        >
+                          Add
+                        </Button>
+                      }
+                    >
+                      <ListItemText
+                        primary={`${crypto.name} (${crypto.symbol.toUpperCase()})`}
+                        primaryTypographyProps={{ fontWeight: 'bold' }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setTopCryptosDialogOpen(false)}>Close</Button>
+            </DialogActions>
+          </Dialog>
         </Container>
       </Box>
     </ThemeProvider>
